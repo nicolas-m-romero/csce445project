@@ -19,7 +19,7 @@ import { useChat, type Message as AIMessage } from "ai/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -372,8 +372,8 @@ export default function ChatInterface() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>U</AvatarFallback>
+                  <Avatar className="h-8 w-8 bg-primary/10 text-primary flex items-center justify-center">
+                    <User className="h-4 w-4" />
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -402,7 +402,22 @@ export default function ChatInterface() {
         {/* Chat container with fixed height and scrollable content */}
         <div className="flex flex-col flex-1 overflow-hidden">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto" ref={scrollAreaRef}>
+          <div className="flex-1 overflow-y-auto relative" ref={scrollAreaRef}>
+            {/* Welcome message when no messages */}
+            {messages.length === 0 && !isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div className="max-w-md text-center p-6 rounded-lg bg-muted/30">
+                  <Avatar className="h-16 w-16 mx-auto mb-4 bg-primary/10 text-primary flex items-center justify-center">
+                    <Bot className="h-8 w-8" />
+                  </Avatar>
+                  <p className="text-lg font-medium mb-2">My name is Nic</p>
+                  <p className="text-muted-foreground">
+                    Your nutritional expert and assistant, what can I help you with today?
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="p-2 sm:p-4">
               <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
                 {error && (
@@ -428,12 +443,11 @@ export default function ChatInterface() {
                       <div className="flex items-start gap-3 sm:gap-4">
                         <Avatar
                           className={cn(
-                            "h-8 w-8",
+                            "h-8 w-8 flex items-center justify-center",
                             msg.role === "user" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
                           )}
                         >
                           {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                          <AvatarFallback>{msg.role === "user" ? "U" : "A"}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium mb-1">{msg.role === "user" ? "You" : "Assistant"}</div>
@@ -449,9 +463,8 @@ export default function ChatInterface() {
                   <Card>
                     <CardContent className="p-3 sm:p-4">
                       <div className="flex items-start gap-3 sm:gap-4">
-                        <Avatar className="h-8 w-8 bg-muted text-muted-foreground">
+                        <Avatar className="h-8 w-8 bg-muted text-muted-foreground flex items-center justify-center">
                           <Bot className="h-4 w-4" />
-                          <AvatarFallback>A</AvatarFallback>
                         </Avatar>
                         <div className="flex items-center">
                           <div className="text-sm font-medium">Assistant</div>
