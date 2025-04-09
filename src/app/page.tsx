@@ -2,36 +2,56 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { Send, User, Bot, PanelRightOpen, PanelRightClose, Plus, AlertCircle, RefreshCw } from "lucide-react"
-import { useChat } from "ai/react"
+import {
+  Send,
+  User,
+  Bot,
+  PanelRightOpen,
+  PanelRightClose,
+  Plus,
+  AlertCircle,
+  RefreshCw,
+  Settings,
+  LogOut,
+} from "lucide-react"
+import { useChat, type Message as AIMessage } from "ai/react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+
+// Extend the AI SDK Message type with our additional properties
+interface Message extends AIMessage {
+  timestamp: Date
+}
 
 interface Conversation {
   id: string
   title: string
-  messages: {
-    id: string
-    role: "user" | "assistant" | "system"
-    content: string
-    timestamp: Date
-  }[]
+  messages: Message[]
   createdAt: Date
+  titleGenerated?: boolean
 }
 
 export default function ChatInterface() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<string | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true)
+  const [isConversationSwitching, setIsConversationSwitching] = useState<boolean>(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Get the active conversation
   const getActiveConversation = () => {
@@ -39,48 +59,40 @@ export default function ChatInterface() {
   }
 
   // Initialize AI chat for the current conversation
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload, data } = useChat({
     api: "/api/chat",
+    id: activeConversation || undefined,
     onError: (error) => {
       console.error("Chat error:", error)
     },
-    onFinish: (message) => {
-      // Update the conversation with the assistant's response
+    onFinish: () => {
+      // Update the conversation with the assistant's response and title if available
       if (activeConversation) {
-        const updatedConversations = conversations.map((conv) => {
-          if (conv.id === activeConversation) {
-            const updatedMessages = [...conv.messages]
-            // Find if we already have this message (to avoid duplicates)
-            const existingMsgIndex = updatedMessages.findIndex(
-              (msg) => msg.content === message.content && msg.role === message.role,
-            )
+        setConversations((prevConversations) =>
+          prevConversations.map((conv) => {
+            if (conv.id === activeConversation) {
+              // Check if we have a title from the API response
+              let title = conv.title
+              let titleGenerated = conv.titleGenerated || false
 
-            if (existingMsgIndex === -1) {
-              updatedMessages.push({
-                id: Date.now().toString(),
-                role: message.role,
-                content: message.content,
-                timestamp: new Date(),
-              })
+              // If we have data with a title and the title hasn't been generated yet
+              if (data?.title && !conv.titleGenerated) {
+                title = data.title
+                titleGenerated = true
+              }
+
+              return {
+                ...conv,
+                title,
+                titleGenerated,
+              }
             }
-
-            return {
-              ...conv,
-              messages: updatedMessages,
-            }
-          }
-          return conv
-        })
-
-        setConversations(updatedConversations)
+            return conv
+          }),
+        )
       }
     },
   })
-
-  // Add this debugging code temporarily to your component
-  useEffect(() => {
-    console.log("Current messages:", messages)
-  }, [messages])
 
   // Check if mobile on mount and handle sidebar visibility
   useEffect(() => {
@@ -101,7 +113,7 @@ export default function ChatInterface() {
   // Scroll to bottom of messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, conversations, activeConversation])
+  }, [messages])
 
   // Create a new conversation
   const createNewConversation = () => {
@@ -124,64 +136,81 @@ export default function ChatInterface() {
     }
   }, [])
 
-  // Sync AI chat messages with the active conversation
+  // Sync conversation messages with useChat when switching conversations
   useEffect(() => {
-    const currentConv = getActiveConversation()
-    if (currentConv) {
-      // Convert our conversation messages to the format expected by useChat
-      setMessages(
-        currentConv.messages.map((msg) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-        })),
-      )
+    if (activeConversation && !isConversationSwitching) {
+      setIsConversationSwitching(true)
+
+      const currentConv = getActiveConversation()
+      if (currentConv) {
+        // Convert conversation messages to the format expected by useChat
+        const chatMessages = currentConv.messages.map(({ id, role, content }) => ({
+          id,
+          role,
+          content,
+        }))
+
+        setMessages(chatMessages)
+
+        // Reset the switching flag after a short delay to allow for state updates
+        setTimeout(() => {
+          setIsConversationSwitching(false)
+        }, 100)
+      } else {
+        setIsConversationSwitching(false)
+      }
     }
   }, [activeConversation])
 
-  // Make sure your handleMessageSubmit function is working correctly
+  // Update conversation state when messages change (from useChat)
+  useEffect(() => {
+    if (activeConversation && !isConversationSwitching && messages.length > 0) {
+      setConversations((prevConversations) =>
+        prevConversations.map((conv) => {
+          if (conv.id === activeConversation) {
+            // Create a new array of messages from the useChat messages
+            const updatedMessages = messages.map((msg) => ({
+              ...msg,
+              timestamp: new Date(),
+            }))
+
+            // Update the title if this is the first user message and title hasn't been generated yet
+            let title = conv.title
+            const titleGenerated = conv.titleGenerated || false
+
+            if (conv.messages.length === 0 && messages.length > 0 && messages[0].role === "user" && !titleGenerated) {
+              // Set a temporary title based on the first message
+              title = messages[0].content.substring(0, 30) + (messages[0].content.length > 30 ? "..." : "")
+            }
+
+            return {
+              ...conv,
+              title,
+              titleGenerated,
+              messages: updatedMessages,
+            }
+          }
+          return conv
+        }),
+      )
+    }
+  }, [messages, activeConversation, isConversationSwitching])
+
+  // Custom submit handler
   const handleMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    console.log("Submitting message:", input)
-
     if (!input.trim() || !activeConversation) {
-      console.log("Empty input or no active conversation")
       return
     }
-
-    // Add user message to our conversation state
-    const userMessage = {
-      id: Date.now().toString(),
-      role: "user" as const,
-      content: input,
-      timestamp: new Date(),
-    }
-
-    // Update conversation with user message and title if first message
-    const updatedConversations = conversations.map((conv) => {
-      if (conv.id === activeConversation) {
-        // Update title if this is the first message
-        const title =
-          conv.messages.length === 0 ? input.substring(0, 30) + (input.length > 30 ? "..." : "") : conv.title
-
-        return {
-          ...conv,
-          title,
-          messages: [...conv.messages, userMessage],
-        }
-      }
-      return conv
-    })
-
-    setConversations(updatedConversations)
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
 
-    // Submit to AI chat
+    // Let the useChat hook handle the submission
+    // The message will be added to the conversation state via the useEffect above
     handleSubmit(e)
   }
 
@@ -224,6 +253,19 @@ export default function ChatInterface() {
     }
   }
 
+  // Navigate to settings
+  const navigateToSettings = () => {
+    // This would typically use a router to navigate
+    console.log("Navigate to settings")
+    alert("Settings page would open here")
+  }
+
+  // Handle logout
+  const handleLogout = () => {
+    console.log("Logout")
+    alert("Logout would happen here")
+  }
+
   // Render sidebar content (used in both desktop and mobile views)
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -234,7 +276,7 @@ export default function ChatInterface() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-2 space-y-1">
           {conversations.map((conversation) => (
             <Button
@@ -270,7 +312,7 @@ export default function ChatInterface() {
             </Button>
           ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 
@@ -289,8 +331,8 @@ export default function ChatInterface() {
       {/* Main content */}
       <div className="flex-1 flex flex-col h-full">
         {/* Header */}
-        <header className="flex items-center px-4 h-14 border-b">
-          <div className="flex items-center gap-2">
+        <header className="flex items-center justify-between px-4 h-14 border-b shrink-0">
+          <div className="flex items-center gap-4">
             {/* Mobile sidebar trigger */}
             <Sheet>
               <SheetTrigger asChild>
@@ -314,113 +356,153 @@ export default function ChatInterface() {
               {isSidebarOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
               <span className="sr-only">Toggle sidebar</span>
             </Button>
+
+            {/* Conversation title - next to toggle */}
+            <h2 className="text-base font-medium text-foreground hidden md:block">
+              {getActiveConversation()?.title || "New conversation"}
+            </h2>
           </div>
 
-          <h1 className="text-lg font-semibold ml-2 truncate">
-            {getActiveConversation()?.title || "New conversation"}
-          </h1>
+          {/* Title and User avatar - right aligned */}
+          <div className="flex items-center gap-4">
+            {/* Main title - right aligned */}
+            <h1 className="text-xl font-bold">NIC - Nutritional Information Chatbot</h1>
+
+            {/* User avatar and dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback>U</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={navigateToSettings} className="cursor-pointer">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 p-2 sm:p-4">
-          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
-            {error && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription className="flex flex-col gap-2">
-                  <p>{error.message || "Failed to load response"}</p>
-                  <Button variant="outline" size="sm" className="w-fit" onClick={() => reload()}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Retry
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
+        {/* Mobile conversation title */}
+        <div className="md:hidden text-center py-2 px-4 border-b">
+          <h2 className="text-base font-medium text-foreground truncate">
+            {getActiveConversation()?.title || "New conversation"}
+          </h2>
+        </div>
 
-            {messages.map((msg) => (
-              <Card
-                key={msg.id}
-                className={cn("border shadow-sm", msg.role === "user" ? "bg-muted/50" : "bg-background")}
-              >
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex items-start gap-3 sm:gap-4">
-                    <Avatar
-                      className={cn(
-                        "h-8 w-8",
-                        msg.role === "user" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                      <AvatarFallback>{msg.role === "user" ? "U" : "A"}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium mb-1">{msg.role === "user" ? "You" : "Assistant"}</div>
-                      <div className="whitespace-pre-wrap break-words text-sm sm:text-base">{msg.content}</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        {/* Chat container with fixed height and scrollable content */}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto" ref={scrollAreaRef}>
+            <div className="p-2 sm:p-4">
+              <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+                {error && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription className="flex flex-col gap-2">
+                      <p>{error.message || "Failed to load response"}</p>
+                      <Button variant="outline" size="sm" className="w-fit" onClick={() => reload()}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-            {/* Loading indicator */}
-            {isLoading && (
-              <Card>
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex items-start gap-3 sm:gap-4">
-                    <Avatar className="h-8 w-8 bg-muted text-muted-foreground">
-                      <Bot className="h-4 w-4" />
-                      <AvatarFallback>A</AvatarFallback>
-                    </Avatar>
-                    <div className="flex items-center">
-                      <div className="text-sm font-medium">Assistant</div>
-                      <div className="ml-2 flex space-x-1">
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse delay-75"></div>
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse delay-150"></div>
+                {messages.map((msg) => (
+                  <Card
+                    key={msg.id}
+                    className={cn("border shadow-sm", msg.role === "user" ? "bg-muted/50" : "bg-background")}
+                  >
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <Avatar
+                          className={cn(
+                            "h-8 w-8",
+                            msg.role === "user" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                          <AvatarFallback>{msg.role === "user" ? "U" : "A"}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium mb-1">{msg.role === "user" ? "You" : "Assistant"}</div>
+                          <div className="whitespace-pre-wrap break-words text-sm sm:text-base">{msg.content}</div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                    </CardContent>
+                  </Card>
+                ))}
 
-            <div ref={messagesEndRef} />
+                {/* Loading indicator */}
+                {isLoading && (
+                  <Card>
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <Avatar className="h-8 w-8 bg-muted text-muted-foreground">
+                          <Bot className="h-4 w-4" />
+                          <AvatarFallback>A</AvatarFallback>
+                        </Avatar>
+                        <div className="flex items-center">
+                          <div className="text-sm font-medium">Assistant</div>
+                          <div className="ml-2 flex space-x-1">
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse delay-75"></div>
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse delay-150"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div ref={messagesEndRef} className="h-4" />
+              </div>
+            </div>
           </div>
-        </ScrollArea>
 
-        {/* Input area */}
-        <div className="p-2 sm:p-4 border-t">
-          <div className="max-w-3xl mx-auto">
-            <form onSubmit={handleMessageSubmit} className="flex flex-col gap-2">
-              <div className="flex items-end gap-2">
-                <Textarea
-                  ref={textareaRef}
-                  placeholder="Message..."
-                  className="flex-1 min-h-[60px] max-h-[200px] resize-none text-base sm:text-sm"
-                  value={input}
-                  onChange={handleTextareaChange}
-                  onKeyDown={handleKeyPress}
-                  disabled={isLoading}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="h-10 w-10 sm:h-9 sm:w-9"
-                  disabled={!input.trim() || isLoading}
-                >
-                  <Send className="h-4 w-4" />
-                  <span className="sr-only">Send</span>
-                </Button>
-              </div>
-              <div className="text-xs text-muted-foreground text-center">
-                Press Enter to send, Shift+Enter for a new line
-              </div>
-            </form>
+          {/* Input area - fixed at bottom */}
+          <div className="p-2 sm:p-4 border-t bg-background shrink-0">
+            <div className="max-w-3xl mx-auto">
+              <form onSubmit={handleMessageSubmit} className="flex flex-col gap-2">
+                <div className="flex items-end gap-2">
+                  <Textarea
+                    ref={textareaRef}
+                    placeholder="Message..."
+                    className="flex-1 min-h-[60px] max-h-[200px] resize-none text-base sm:text-sm"
+                    value={input}
+                    onChange={handleTextareaChange}
+                    onKeyDown={handleKeyPress}
+                    disabled={isLoading}
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="h-10 w-10 sm:h-9 sm:w-9"
+                    disabled={!input.trim() || isLoading}
+                  >
+                    <Send className="h-4 w-4" />
+                    <span className="sr-only">Send</span>
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground text-center">
+                  Press Enter to send, Shift+Enter for a new line
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>
     </div>
   )
 }
-

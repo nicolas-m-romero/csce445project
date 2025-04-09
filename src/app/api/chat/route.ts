@@ -11,8 +11,8 @@ export const runtime = "nodejs"
 export const maxDuration = 60 // Increase the function timeout to 60 seconds
 
 interface ChatMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
+  role: "user" | "assistant" | "system"
+  content: string
 }
 
 export async function POST(req: Request) {
@@ -46,6 +46,35 @@ export async function POST(req: Request) {
       })
     }
 
+    // Check if this is the first message in a conversation
+    const isFirstMessage = messages.length === 1 && messages[0].role === "user"
+    let title = null
+
+    // Generate a title if this is the first message
+    if (isFirstMessage) {
+      try {
+        const titleCompletion = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a helpful assistant that generates short, concise titles (3-5 words) for conversations based on the user's initial message. The title should capture the main topic or intent.",
+            },
+            { role: "user", content: messages[0].content },
+          ],
+          max_tokens: 25,
+          temperature: 0.7,
+        })
+
+        title = titleCompletion.choices[0].message.content?.trim() || null
+        console.log("Generated title:", title)
+      } catch (titleError) {
+        console.error("Error generating title:", titleError)
+        // Continue with the main request even if title generation fails
+      }
+    }
+
     // Use streaming with Vercel AI SDK-compatible format
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -56,7 +85,15 @@ export async function POST(req: Request) {
       })),
     })
 
-    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>)
+    // Create a stream with the title included in the metadata
+    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
+      onStart: async () => {
+        // This function runs at the start of the stream
+        return { title }
+      },
+    })
+
+    // Return the streaming response with the metadata
     return new StreamingTextResponse(stream)
   } catch (error) {
     const err = error as Error & { code?: string }
