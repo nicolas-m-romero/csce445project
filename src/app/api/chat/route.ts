@@ -1,10 +1,10 @@
 import { OpenAI } from 'openai'
-//import { StreamingTextResponse, OpenAIStream } from 'ai'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
+//* Connect to FDA Database
 const FDC_API_KEY = process.env.FDC_API_KEY
 
 export const runtime = 'edge'
@@ -15,7 +15,7 @@ interface ChatMessage {
   content: string
 }
 
-// 🥦 Helper: Fetch nutrition info from FDA API
+//* Helper: Fetch nutrition info from FDA API
 async function fetchFDAInfo(foodItems: string[]) {
   const results = []
 
@@ -70,30 +70,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // 🧠 Generate a short title if it's the first user message
-    let title = null
-    if (messages.length === 1 && messages[0].role === 'user') {
-      try {
-        const titleCompletion = await openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Generate a short, 3-5 word title based on this user message.',
-            },
-            { role: 'user', content: messages[0].content },
-          ],
-          max_tokens: 25,
-        })
-
-        title = titleCompletion.choices[0].message.content?.trim() || null
-      } catch (err) {
-        console.warn('Could not generate title:', err)
-      }
-    }
-
-    // 🍽 Step 1: Extract food items from the latest user message
+    //* Step 1: Extract food items from the latest user message
     const extraction = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -112,7 +89,7 @@ export async function POST(req: Request) {
       .map((item) => item.trim())
       .filter(Boolean)
 
-    // 🍏 Step 2: Fetch nutrition info
+    //* Step 2: Fetch nutrition info
     const nutritionData = await fetchFDAInfo(foodItems)
 
     const nutritionSummary = nutritionData
@@ -127,12 +104,24 @@ export async function POST(req: Request) {
       })
       .join('\n')
 
-    // 💬 Step 3: Inject system message with FDA data
+    //* Step 3: Inject system message with FDA data
     const enhancedMessages: ChatMessage[] = [
       {
         role: 'system',
         content:
-          'You are a helpful nutritionist. Use the FDA-backed nutritional data below to inform your response. If data is missing, explain that and offer general advice.',
+          `You are a helpful nutritionist. Use the FDA-backed nutritional data below to inform your response.
+          Make sure you complete the following requirements: 
+          - If the user asks about the nutritional value of a food item, provide the data from the FDA API. 
+          - If the user asks for a recipe or meal plan, use the nutritional data to suggest healthy options. 
+          - If the user asks about dietary restrictions, use the nutritional data to inform your response. 
+          - If the user asks for general nutrition advice, use the FDA data to support your recommendations.
+          - If data is missing, explain that and offer general advice.
+          Ensure that your response is clear, concise, and informative.
+          Use the data to support your recommendations and provide actionable advice.
+          Make sure to not use quotes in your response. Please only make use of periods, commas, dashes, and new lines.
+          When using new lines make sure that at least two are used in a row to separate paragraphs.
+          Make sure to not use any markdown or code blocks in your response.
+          `,
       },
       {
         role: 'system',
@@ -147,11 +136,9 @@ export async function POST(req: Request) {
       messages: enhancedMessages,
     })
 
-
-    return new Response(JSON.stringify({
-      title,
-      message: completion.choices[0].message.content,
-    }), {
+    const response = completion.choices[0].message.content
+    console.log('ChatGPT response:', response)
+    return new Response(JSON.stringify(response), {
       headers: { 'Content-Type': 'application/json' },
     })
     

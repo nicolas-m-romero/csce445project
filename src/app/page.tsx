@@ -44,6 +44,20 @@ interface Conversation {
   titleGenerated?: boolean
 }
 
+// Helper function to parse/clean the incoming message string
+function parseMessage(message: string): string {
+  try {
+    // Attempt to parse if the message was JSON-stringified on the server
+    return JSON.parse(message)
+  } catch {
+    // Fallback: Remove wrapping quotes (if any) and replace escaped newlines with real newlines
+    if (message.startsWith('"') && message.endsWith('"')) {
+      message = message.substring(1, message.length - 1)
+    }
+    return message.replace(/\\n/g, "\n")
+  }
+}
+
 export default function ChatInterface() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<string | null>(null)
@@ -66,7 +80,6 @@ export default function ChatInterface() {
       console.error("Chat error:", error)
     },
     onFinish: () => {
-      // Update the conversation with the assistant's response and title if available
       if (activeConversation) {
         setConversations((prevConversations) =>
           prevConversations.map((conv) => {
@@ -77,7 +90,6 @@ export default function ChatInterface() {
     },
   })
 
-  // Check if mobile on mount and handle sidebar visibility
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 768) {
@@ -98,7 +110,6 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Create a new conversation
   const createNewConversation = () => {
     const newConversation: Conversation = {
       id: Date.now().toString(),
@@ -106,31 +117,27 @@ export default function ChatInterface() {
       messages: [],
       createdAt: new Date(),
     }
-  
+
     setConversations((prev) => [newConversation, ...prev])
     setActiveConversation(newConversation.id)
-  
-    // Only clear messages if there's already something active
+
     if (activeConversation) {
       setMessages([])
     }
   }
 
-  // Initialize with a default conversation if none exists
   useEffect(() => {
     if (conversations.length === 0 && !activeConversation) {
       createNewConversation()
     }
   }, [conversations.length, activeConversation])
 
-  // Sync conversation messages with useChat when switching conversations
   useEffect(() => {
     if (activeConversation && !isConversationSwitching) {
       setIsConversationSwitching(true)
 
       const currentConv = getActiveConversation()
       if (currentConv) {
-        // Convert conversation messages to the format expected by useChat
         const chatMessages = currentConv.messages.map(({ id, role, content }) => ({
           id,
           role,
@@ -139,7 +146,6 @@ export default function ChatInterface() {
 
         setMessages(chatMessages)
 
-        // Reset the switching flag after a short delay to allow for state updates
         setTimeout(() => {
           setIsConversationSwitching(false)
         }, 100)
@@ -149,24 +155,20 @@ export default function ChatInterface() {
     }
   }, [activeConversation])
 
-  // Update conversation state when messages change (from useChat)
   useEffect(() => {
     if (activeConversation && !isConversationSwitching && messages.length > 0) {
       setConversations((prevConversations) =>
         prevConversations.map((conv) => {
           if (conv.id === activeConversation) {
-            // Create a new array of messages from the useChat messages
             const updatedMessages = messages.map((msg) => ({
               ...msg,
               timestamp: new Date(),
             }))
 
-            // Update the title if this is the first user message and title hasn't been generated yet
             let title = conv.title
             const titleGenerated = conv.titleGenerated || false
 
             if (conv.messages.length === 0 && messages.length > 0 && messages[0].role === "user" && !titleGenerated) {
-              // Set a temporary title based on the first message
               title = messages[0].content.substring(0, 30) + (messages[0].content.length > 30 ? "..." : "")
             }
 
@@ -183,7 +185,6 @@ export default function ChatInterface() {
     }
   }, [messages, activeConversation, isConversationSwitching])
 
-  // Custom submit handler
   const handleMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
@@ -191,21 +192,15 @@ export default function ChatInterface() {
       return
     }
 
-    // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
 
-    // Let the useChat hook handle the submission
-    // The message will be added to the conversation state via the useEffect above
     handleSubmit(e)
   }
 
-  // Handle textarea resize
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     handleInputChange(e)
-
-    // Auto resize textarea
     const textarea = textareaRef.current
     if (textarea) {
       textarea.style.height = "auto"
@@ -213,7 +208,6 @@ export default function ChatInterface() {
     }
   }
 
-  // Handle key press (Enter to send, Shift+Enter for new line)
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
@@ -222,38 +216,30 @@ export default function ChatInterface() {
     }
   }
 
-  // Delete a conversation
   const deleteConversation = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
 
     const updatedConversations = conversations.filter((conv) => conv.id !== id)
     setConversations(updatedConversations)
 
-    // If we deleted the active conversation, set a new active one
     if (id === activeConversation) {
       setActiveConversation(updatedConversations.length > 0 ? updatedConversations[0].id : null)
-
-      // If no conversations left, create a new one
       if (updatedConversations.length === 0) {
         createNewConversation()
       }
     }
   }
 
-  // Navigate to settings
   const navigateToSettings = () => {
-    // This would typically use a router to navigate
     console.log("Navigate to settings")
     alert("Settings page would open here")
   }
 
-  // Handle logout
   const handleLogout = () => {
     console.log("Logout")
     alert("Logout would happen here")
   }
 
-  // Render sidebar content (used in both desktop and mobile views)
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b">
@@ -320,7 +306,6 @@ export default function ChatInterface() {
         {/* Header */}
         <header className="flex items-center justify-between px-4 h-14 border-b shrink-0">
           <div className="flex items-center gap-4">
-            {/* Mobile sidebar trigger */}
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden">
@@ -333,7 +318,6 @@ export default function ChatInterface() {
               </SheetContent>
             </Sheet>
 
-            {/* Desktop sidebar toggle */}
             <Button
               variant="ghost"
               size="icon"
@@ -344,18 +328,14 @@ export default function ChatInterface() {
               <span className="sr-only">Toggle sidebar</span>
             </Button>
 
-            {/* Conversation title - next to toggle */}
             <h2 className="text-base font-medium text-foreground hidden md:block">
               {getActiveConversation()?.title || "New conversation"}
             </h2>
           </div>
 
-          {/* Title and User avatar - right aligned */}
           <div className="flex items-center gap-4">
-            {/* Main title - right aligned */}
             <h1 className="text-xl font-bold">NIC - Nutritional Information Chatbot</h1>
 
-            {/* User avatar and dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
@@ -379,18 +359,15 @@ export default function ChatInterface() {
           </div>
         </header>
 
-        {/* Mobile conversation title */}
         <div className="md:hidden text-center py-2 px-4 border-b">
           <h2 className="text-base font-medium text-foreground truncate">
             {getActiveConversation()?.title || "New conversation"}
           </h2>
         </div>
 
-        {/* Chat container with fixed height and scrollable content */}
+        {/* Chat container */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto relative" ref={scrollAreaRef}>
-            {/* Welcome message when no messages */}
             {messages.length === 0 && !isLoading && (
               <div className="absolute inset-0 flex items-center justify-center p-4">
                 <div className="max-w-md text-center p-6 rounded-lg bg-muted/30">
@@ -437,15 +414,18 @@ export default function ChatInterface() {
                           {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium mb-1">{msg.role === "user" ? "You" : "Assistant"}</div>
-                          <div className="whitespace-pre-wrap break-words text-sm sm:text-base">{msg.content}</div>
+                          <div className="text-sm font-medium mb-1">
+                            {msg.role === "user" ? "You" : "Assistant"}
+                          </div>
+                          <div className="whitespace-pre-wrap break-words text-sm sm:text-base">
+                            {parseMessage(msg.content)}
+                          </div>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
 
-                {/* Loading indicator */}
                 {isLoading && (
                   <Card>
                     <CardContent className="p-3 sm:p-4">
@@ -471,7 +451,6 @@ export default function ChatInterface() {
             </div>
           </div>
 
-          {/* Input area - fixed at bottom */}
           <div className="p-2 sm:p-4 border-t bg-background shrink-0">
             <div className="max-w-3xl mx-auto">
               <form onSubmit={handleMessageSubmit} className="flex flex-col gap-2">
