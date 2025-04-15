@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai'
-import { StreamingTextResponse, OpenAIStream } from 'ai'
+//import { StreamingTextResponse, OpenAIStream } from 'ai'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -122,6 +122,7 @@ export async function POST(req: Request) {
           `${n.nutrientName}: ${n.value} ${n.unitName}`
         )
         .join(', ')
+
         return `${entry.item} → ${nutrients}`
       })
       .join('\n')
@@ -141,17 +142,19 @@ export async function POST(req: Request) {
     ]
 
     // 🔄 Step 4: Stream GPT response
-    const response = await openai.chat.completions.create({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-4',
-      stream: true,
       messages: enhancedMessages,
     })
 
-    const stream = OpenAIStream(response, {
-      onStart: async () => ({ title }),
-    })
 
-    return new StreamingTextResponse(stream)
+    return new Response(JSON.stringify({
+      title,
+      message: completion.choices[0].message.content,
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+    
   } catch (error) {
     const err = error as Error & { code?: string }
     console.error('Error in chat route:', err)
