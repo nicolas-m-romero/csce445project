@@ -118,8 +118,10 @@ export async function POST(req: Request) {
     const nutritionSummary = nutritionData
       .map((entry) => {
         const nutrients = entry.nutrients
-          .map((n) => `${n.nutrientName}: ${n.value} ${n.unitName}`)
-          .join(', ')
+        .map((n: { nutrientName: string; value: number; unitName: string }) => 
+          `${n.nutrientName}: ${n.value} ${n.unitName}`
+        )
+        .join(', ')
         return `${entry.item} → ${nutrients}`
       })
       .join('\n')
