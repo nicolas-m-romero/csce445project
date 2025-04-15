@@ -1,6 +1,5 @@
 import { OpenAI } from 'openai'
 import { StreamingTextResponse, OpenAIStream } from 'ai'
-import type { ChatCompletionChunk } from 'openai/resources/chat'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -146,7 +145,7 @@ export async function POST(req: Request) {
       messages: enhancedMessages,
     })
 
-    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
+    const stream = OpenAIStream(response, {
       onStart: async () => ({ title }),
     })
 
