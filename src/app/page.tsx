@@ -59,7 +59,7 @@ export default function ChatInterface() {
   }
 
   // Initialize AI chat for the current conversation
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload, data } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload } = useChat({
     api: "/api/chat",
     id: activeConversation || undefined,
     onError: (error) => {
@@ -70,23 +70,6 @@ export default function ChatInterface() {
       if (activeConversation) {
         setConversations((prevConversations) =>
           prevConversations.map((conv) => {
-            if (conv.id === activeConversation) {
-              // Check if we have a title from the API response
-              let title = conv.title
-              let titleGenerated = conv.titleGenerated || false
-
-              // If we have data with a title and the title hasn't been generated yet
-              if (data?.title && !conv.titleGenerated) {
-                title = data.title
-                titleGenerated = true
-              }
-
-              return {
-                ...conv,
-                title,
-                titleGenerated,
-              }
-            }
             return conv
           }),
         )
@@ -123,18 +106,22 @@ export default function ChatInterface() {
       messages: [],
       createdAt: new Date(),
     }
-
-    setConversations([newConversation, ...conversations])
+  
+    setConversations((prev) => [newConversation, ...prev])
     setActiveConversation(newConversation.id)
-    setMessages([]) // Reset AI chat messages
+  
+    // Only clear messages if there's already something active
+    if (activeConversation) {
+      setMessages([])
+    }
   }
 
   // Initialize with a default conversation if none exists
   useEffect(() => {
-    if (conversations.length === 0) {
+    if (conversations.length === 0 && !activeConversation) {
       createNewConversation()
     }
-  }, [])
+  }, [conversations.length, activeConversation])
 
   // Sync conversation messages with useChat when switching conversations
   useEffect(() => {

@@ -1,18 +1,18 @@
-import OpenAI from "openai"
-import { OpenAIStream, StreamingTextResponse } from "ai"
-import type { ChatCompletionChunk } from "openai/resources/chat"
+import { OpenAI } from 'openai'
+import { StreamingTextResponse, OpenAIStream } from 'ai'
+import type { ChatCompletionChunk } from 'openai/resources/chat'
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY!,
 })
 
 const FDC_API_KEY = process.env.FDC_API_KEY
 
-export const runtime = "nodejs"
+export const runtime = 'edge'
 export const maxDuration = 60
 
 interface ChatMessage {
-  role: "user" | "assistant" | "system"
+  role: 'user' | 'assistant' | 'system'
   content: string
 }
 
@@ -45,64 +45,71 @@ export async function POST(req: Request) {
     const { messages } = body
 
     if (!process.env.OPENAI_API_KEY || !FDC_API_KEY) {
-      return new Response(JSON.stringify({ error: "Missing API keys" }), {
+      return new Response(JSON.stringify({ error: 'Missing API keys' }), {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: { 'Content-Type': 'application/json' },
       })
     }
 
     if (!Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: "'messages' must be an array." }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({ error: "'messages' must be an array." }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     if (messages.length > 50) {
-      return new Response(JSON.stringify({ error: "Too many messages provided. Limit to 50." }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Too many messages provided. Limit to 50.' }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     // 🧠 Generate a short title if it's the first user message
     let title = null
-    if (messages.length === 1 && messages[0].role === "user") {
+    if (messages.length === 1 && messages[0].role === 'user') {
       try {
         const titleCompletion = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
+          model: 'gpt-3.5-turbo',
           messages: [
             {
-              role: "system",
-              content: "Generate a short, 3-5 word title based on this user message.",
+              role: 'system',
+              content:
+                'Generate a short, 3-5 word title based on this user message.',
             },
-            { role: "user", content: messages[0].content },
+            { role: 'user', content: messages[0].content },
           ],
           max_tokens: 25,
         })
 
         title = titleCompletion.choices[0].message.content?.trim() || null
       } catch (err) {
-        console.warn("Could not generate title:", err)
+        console.warn('Could not generate title:', err)
       }
     }
 
-    // 🍽 Step 1: Extract food items using GPT
+    // 🍽 Step 1: Extract food items from the latest user message
     const extraction = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: 'gpt-4',
       messages: [
         {
-          role: "system",
+          role: 'system',
           content:
-            "Extract individual food items from the user's message. Only return a comma-separated list.",
+            'Extract individual food items from the user\'s message. Only return a comma-separated list.',
         },
         messages[messages.length - 1],
       ],
     })
 
-    const foodList = extraction.choices[0].message.content ?? ""
+    const foodList = extraction.choices[0].message.content ?? ''
     const foodItems = foodList
-      .split(",")
+      .split(',')
       .map((item) => item.trim())
       .filter(Boolean)
 
@@ -113,28 +120,28 @@ export async function POST(req: Request) {
       .map((entry) => {
         const nutrients = entry.nutrients
           .map((n) => `${n.nutrientName}: ${n.value} ${n.unitName}`)
-          .join(", ")
+          .join(', ')
         return `${entry.item} → ${nutrients}`
       })
-      .join("\n")
+      .join('\n')
 
     // 💬 Step 3: Inject system message with FDA data
     const enhancedMessages: ChatMessage[] = [
       {
-        role: "system",
+        role: 'system',
         content:
-          "You are a helpful nutritionist. Use the FDA-backed nutritional data below to inform your response. If data is missing, explain that and offer general advice.",
+          'You are a helpful nutritionist. Use the FDA-backed nutritional data below to inform your response. If data is missing, explain that and offer general advice.',
       },
       {
-        role: "system",
-        content: `FDA Nutrition Data:\n${nutritionSummary || "No data found for input foods."}`,
+        role: 'system',
+        content: `FDA Nutrition Data:\n${nutritionSummary || 'No data found for input foods.'}`,
       },
       ...messages,
     ]
 
     // 🔄 Step 4: Stream GPT response
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: 'gpt-4',
       stream: true,
       messages: enhancedMessages,
     })
@@ -146,14 +153,14 @@ export async function POST(req: Request) {
     return new StreamingTextResponse(stream)
   } catch (error) {
     const err = error as Error & { code?: string }
-    console.error("Error in chat route:", err)
+    console.error('Error in chat route:', err)
     return new Response(
       JSON.stringify({
-        error: err.message || "Unexpected error",
+        error: err.message || 'Unexpected error',
         stack: err.stack,
-        code: err.code || "unknown_error",
+        code: err.code || 'unknown_error',
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
 }
