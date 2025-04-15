@@ -95,7 +95,7 @@ export async function POST(req: Request) {
 
     // 🍽 Step 1: Extract food items from the latest user message
     const extraction = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
 
     // 🔄 Step 4: Stream GPT response
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-3.5-turbo',
       messages: enhancedMessages,
     })
 
