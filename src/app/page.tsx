@@ -70,23 +70,27 @@ export default function ChatInterface() {
       if (activeConversation) {
         setConversations((prevConversations) =>
           prevConversations.map((conv) => {
-            if (conv.id === activeConversation) {
-              // Check if we have a title from the API response
-              let title = conv.title
-              let titleGenerated = conv.titleGenerated || false
+            // if (conv.id === activeConversation) {
+            //   // Check if we have a title from the API response
+            //   // let title = conv.title
+            //   // let titleGenerated = conv.titleGenerated || false
 
-              // If we have data with a title and the title hasn't been generated yet
-              if (data?.title && !conv.titleGenerated) {
-                title = data.title
-                titleGenerated = true
-              }
+            //   //! DEBUG STATEMENT
+            //   // console.log("data.title:", data?.title)
+            //   // console.log("conv.titleGenerated:", conv.titleGenerated)
 
-              return {
-                ...conv,
-                title,
-                titleGenerated,
-              }
-            }
+            //   // // If we have data with a title and the title hasn't been generated yet
+            //   // if (data?.title && !conv.titleGenerated) {
+            //   //   title = data.title
+            //   //   titleGenerated = true
+            //   // }
+
+            //   return {
+            //     ...conv,
+            //     title,
+            //     titleGenerated,
+            //   }
+            // }
             return conv
           }),
         )
