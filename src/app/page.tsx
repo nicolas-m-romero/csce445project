@@ -123,18 +123,22 @@ export default function ChatInterface() {
       messages: [],
       createdAt: new Date(),
     }
-
-    setConversations([newConversation, ...conversations])
+  
+    setConversations((prev) => [newConversation, ...prev])
     setActiveConversation(newConversation.id)
-    setMessages([]) // Reset AI chat messages
+  
+    // Only clear messages if there's already something active
+    if (activeConversation) {
+      setMessages([])
+    }
   }
 
   // Initialize with a default conversation if none exists
   useEffect(() => {
-    if (conversations.length === 0) {
+    if (conversations.length === 0 && !activeConversation) {
       createNewConversation()
     }
-  }, [])
+  }, [conversations.length, activeConversation])
 
   // Sync conversation messages with useChat when switching conversations
   useEffect(() => {

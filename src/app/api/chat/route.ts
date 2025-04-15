@@ -1,6 +1,6 @@
 import OpenAI from "openai"
 import { OpenAIStream, StreamingTextResponse } from "ai"
-import type { ChatCompletionChunk } from "openai/resources/chat"
+// import type { ChatCompletionChunk } from "openai/resources/chat/completions"
 
 // Create an OpenAI API client
 const openai = new OpenAI({
@@ -75,23 +75,35 @@ export async function POST(req: Request) {
       }
     }
 
-    // Use streaming with Vercel AI SDK-compatible format
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: 'gpt-4',
+      messages,
       stream: true,
-      messages: messages.map((message: ChatMessage) => ({
-        role: message.role,
-        content: message.content,
-      })),
-    })
+    });
+    
+    // DO NOT cast response or manually assert its type.
+    const stream = OpenAIStream(response, {
+      onStart: async () => ({ title }),
+    });
+    
 
-    // Create a stream with the title included in the metadata
-    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
-      onStart: async () => {
-        // This function runs at the start of the stream
-        return { title }
-      },
-    })
+    // // Use streaming with Vercel AI SDK-compatible format
+    // const response = await openai.chat.completions.create({
+    //   model: "gpt-3.5-turbo",
+    //   stream: true,
+    //   messages: messages.map((message: ChatMessage) => ({
+    //     role: message.role,
+    //     content: message.content,
+    //   })),
+    // })
+
+    // // Create a stream with the title included in the metadata
+    // const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
+    //   onStart: async () => {
+    //     // This function runs at the start of the stream
+    //     return { title }
+    //   },
+    // })
 
     // Return the streaming response with the metadata
     return new StreamingTextResponse(stream)
