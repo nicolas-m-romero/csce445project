@@ -2,43 +2,62 @@ import OpenAI from "openai"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import type { ChatCompletionChunk } from "openai/resources/chat"
 
-// Create an OpenAI API client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+const FDC_API_KEY = process.env.FDC_API_KEY
+
 export const runtime = "nodejs"
-export const maxDuration = 60 // Increase the function timeout to 60 seconds
+export const maxDuration = 60
 
 interface ChatMessage {
   role: "user" | "assistant" | "system"
   content: string
 }
 
+// 🥦 Helper: Fetch nutrition info from FDA API
+async function fetchFDAInfo(foodItems: string[]) {
+  const results = []
+
+  for (const item of foodItems) {
+    const res = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(
+        item
+      )}&api_key=${FDC_API_KEY}`
+    )
+    const data = await res.json()
+
+    if (data.foods?.length > 0) {
+      results.push({
+        item,
+        nutrients: data.foods[0].foodNutrients?.slice(0, 5) || [],
+      })
+    }
+  }
+
+  return results
+}
+
 export async function POST(req: Request) {
   try {
-    // Parse the request body
     const body = await req.json()
     const { messages } = body
 
-    // Verify we have an API key
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("OpenAI API key not configured")
-      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+    if (!process.env.OPENAI_API_KEY || !FDC_API_KEY) {
+      return new Response(JSON.stringify({ error: "Missing API keys" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       })
     }
 
-    // Validate messages input
     if (!Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: "Invalid request: 'messages' must be an array." }), {
+      return new Response(JSON.stringify({ error: "'messages' must be an array." }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       })
     }
 
-    // Optional: limit number of messages to prevent excessive usage
     if (messages.length > 50) {
       return new Response(JSON.stringify({ error: "Too many messages provided. Limit to 50." }), {
         status: 400,
@@ -46,67 +65,95 @@ export async function POST(req: Request) {
       })
     }
 
-    // Check if this is the first message in a conversation
-    const isFirstMessage = messages.length === 1 && messages[0].role === "user"
+    // 🧠 Generate a short title if it's the first user message
     let title = null
-
-    // Generate a title if this is the first message
-    if (isFirstMessage) {
+    if (messages.length === 1 && messages[0].role === "user") {
       try {
         const titleCompletion = await openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [
             {
               role: "system",
-              content:
-                "You are a helpful assistant that generates short, concise titles (3-5 words) for conversations based on the user's initial message. The title should capture the main topic or intent.",
+              content: "Generate a short, 3-5 word title based on this user message.",
             },
             { role: "user", content: messages[0].content },
           ],
           max_tokens: 25,
-          temperature: 0.7,
         })
 
         title = titleCompletion.choices[0].message.content?.trim() || null
-        console.log("Generated title:", title)
-      } catch (titleError) {
-        console.error("Error generating title:", titleError)
-        // Continue with the main request even if title generation fails
+      } catch (err) {
+        console.warn("Could not generate title:", err)
       }
     }
 
-    // Use streaming with Vercel AI SDK-compatible format
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      stream: true,
-      messages: messages.map((message: ChatMessage) => ({
-        role: message.role,
-        content: message.content,
-      })),
+    // 🍽 Step 1: Extract food items using GPT
+    const extraction = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Extract individual food items from the user's message. Only return a comma-separated list.",
+        },
+        messages[messages.length - 1],
+      ],
     })
 
-    // Create a stream with the title included in the metadata
-    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
-      onStart: async () => {
-        // This function runs at the start of the stream
-        return { title }
+    const foodList = extraction.choices[0].message.content ?? ""
+    const foodItems = foodList
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    // 🍏 Step 2: Fetch nutrition info
+    const nutritionData = await fetchFDAInfo(foodItems)
+
+    const nutritionSummary = nutritionData
+      .map((entry) => {
+        const nutrients = entry.nutrients
+          .map((n) => `${n.nutrientName}: ${n.value} ${n.unitName}`)
+          .join(", ")
+        return `${entry.item} → ${nutrients}`
+      })
+      .join("\n")
+
+    // 💬 Step 3: Inject system message with FDA data
+    const enhancedMessages: ChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You are a helpful nutritionist. Use the FDA-backed nutritional data below to inform your response. If data is missing, explain that and offer general advice.",
       },
+      {
+        role: "system",
+        content: `FDA Nutrition Data:\n${nutritionSummary || "No data found for input foods."}`,
+      },
+      ...messages,
+    ]
+
+    // 🔄 Step 4: Stream GPT response
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      stream: true,
+      messages: enhancedMessages,
     })
 
-    // Return the streaming response with the metadata
+    const stream = OpenAIStream(response as AsyncIterable<ChatCompletionChunk>, {
+      onStart: async () => ({ title }),
+    })
+
     return new StreamingTextResponse(stream)
   } catch (error) {
     const err = error as Error & { code?: string }
-    console.error("Error in chat API route:", err)
-
-    // Return a more detailed error response
+    console.error("Error in chat route:", err)
     return new Response(
       JSON.stringify({
-        error: err.message || "An error occurred",
-        details: err.stack,
+        error: err.message || "Unexpected error",
+        stack: err.stack,
         code: err.code || "unknown_error",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
+      { status: 500, headers: { "Content-Type": "application/json" } }
     )
   }
 }
