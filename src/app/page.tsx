@@ -59,7 +59,7 @@ export default function ChatInterface() {
   }
 
   // Initialize AI chat for the current conversation
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload, data } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, error, reload } = useChat({
     api: "/api/chat",
     id: activeConversation || undefined,
     onError: (error) => {
@@ -70,27 +70,6 @@ export default function ChatInterface() {
       if (activeConversation) {
         setConversations((prevConversations) =>
           prevConversations.map((conv) => {
-            // if (conv.id === activeConversation) {
-            //   // Check if we have a title from the API response
-            //   // let title = conv.title
-            //   // let titleGenerated = conv.titleGenerated || false
-
-            //   //! DEBUG STATEMENT
-            //   // console.log("data.title:", data?.title)
-            //   // console.log("conv.titleGenerated:", conv.titleGenerated)
-
-            //   // // If we have data with a title and the title hasn't been generated yet
-            //   // if (data?.title && !conv.titleGenerated) {
-            //   //   title = data.title
-            //   //   titleGenerated = true
-            //   // }
-
-            //   return {
-            //     ...conv,
-            //     title,
-            //     titleGenerated,
-            //   }
-            // }
             return conv
           }),
         )
